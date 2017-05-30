@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"net"
-    "net/http"
+	"net/http"
 	"flag"
 	"io"
 	"io/ioutil"
@@ -49,12 +49,10 @@ func getToken() (string) {
 
 	cookies := res.Cookies()
 
-//	body, err := ioutil.ReadAll(res.Body)
 	_, err = ioutil.ReadAll(res.Body)
 	if err != nil {
 		Vlogln(2, "getToken() ReadAll err:", err)
 	}
-//	Vlogln(2, "getToken()", cookies, string(body))
 	Vlogln(3, "getToken()", cookies)
 
 	for _, cookie := range cookies {
@@ -94,10 +92,6 @@ func getTx(token string) (io.WriteCloser, []byte) {
 		Vlogln(2, "Tx ReadResponse", err, res)
 		return nil, nil
 	}
-//	Vlogln(2, "Tx Response", res, txbuf)
-
-//	body := bufio.NewReader(res.Body)
-//	Vlogln(2, "Tx Response", body.Buffered(), txbuf.Buffered())
 
 	return tx, nil
 }
@@ -126,13 +120,9 @@ func getRx(token string) (io.ReadCloser, []byte) {
 		Vlogln(2, "Rx ReadResponse", err, res)
 		return nil, nil
 	}
-//	Vlogln(2, "Rx Response", res, rxbuf)
-
-//	body := bufio.NewReader(res.Body)
-//	Vlogln(2, "Rx Response", body.Buffered(), rxbuf.Buffered())
 
 	n := rxbuf.Buffered()
-	Vlogln(2, "Rx Response", n)
+	Vlogln(3, "Rx Response", n)
 	if n > 0 {
 		buf := make([]byte, n)
 		rxbuf.Read(buf[:n])
@@ -166,8 +156,8 @@ func handleClient(p0 net.Conn) {
 	defer rx.Close()
 	p0.Write(rxbuf)
 
-	Vlogln(2, "tx:", tx)
-	Vlogln(2, "rx:", rx)
+	Vlogln(4, "tx:", tx)
+	Vlogln(4, "rx:", rx)
 	cp(rx, p0, tx)
 }
 
@@ -210,31 +200,12 @@ func main() {
 
 
 func cp(p1 io.ReadCloser, p0 io.ReadWriteCloser, p2 io.WriteCloser) {
-//	Vlogln(2, "stream opened")
-//	defer Vlogln(2, "stream closed")
-//	defer p1.Close()
-//	defer p2.Close()
-//	defer p0.Close()
 
 	// start tunnel
 	p1die := make(chan struct{})
 	go func() {
 		buf := copyBuf.Get().([]byte)
 		io.CopyBuffer(p0, p1, buf)
-/*
-		for {
-			n, err := p1.Read(buf)
-			if err != nil {
-				break
-			}
-			Vlogln(2, "p1 -> p0:", buf[:n])
-
-			_, err = p0.Write(buf[:n])
-			if err != nil {
-				break
-			}
-		}
-*/
 		close(p1die)
 		copyBuf.Put(buf)
 	}()
@@ -243,20 +214,6 @@ func cp(p1 io.ReadCloser, p0 io.ReadWriteCloser, p2 io.WriteCloser) {
 	go func() {
 		buf := copyBuf.Get().([]byte)
 		io.CopyBuffer(p2, p0, buf)
-/*
-		for {
-			n, err := p0.Read(buf)
-			if err != nil {
-				break
-			}
-			Vlogln(2, "p0 -> p2:", buf[:n])
-
-			_, err = p2.Write(buf[:n])
-			if err != nil {
-				break
-			}
-		}
-*/
 		close(p2die)
 		copyBuf.Put(buf)
 	}()

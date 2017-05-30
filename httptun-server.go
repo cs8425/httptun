@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"math/rand"
 	"net"
-    "net/http"
+	"net/http"
 	"sync"
 	"time"
 	"io"
@@ -126,11 +126,11 @@ FILE:
 	header.Set("Server", *headerServer)
 	token := RandStringBytes(16)
 	expiration := time.Now().AddDate(0, 0, 3)
-    cookie := http.Cookie{Name: *tokenCookieA, Value: token, Expires: expiration}
-    http.SetCookie(w, &cookie)
+	cookie := http.Cookie{Name: *tokenCookieA, Value: token, Expires: expiration}
+	http.SetCookie(w, &cookie)
 	regToken(token)
 
-	Vlogln(2, "Hi:", r.URL.Path, token, c)
+	Vlogln(2, "web:", r.URL.Path, token, c)
 
 	handlerFile.ServeHTTP(w, r)
 }
@@ -229,8 +229,6 @@ func tokenCleaner(srv server) {
 }
 
 func cp(p1 io.ReadCloser, p0 io.ReadWriteCloser, p2 io.WriteCloser) {
-//	Vlogln(2, "stream opened")
-//	defer Vlogln(2, "stream closed")
 	defer p1.Close()
 	defer p2.Close()
 	defer p0.Close()
@@ -240,20 +238,6 @@ func cp(p1 io.ReadCloser, p0 io.ReadWriteCloser, p2 io.WriteCloser) {
 	go func() {
 		buf := copyBuf.Get().([]byte)
 		io.CopyBuffer(p0, p1, buf)
-/*
-		for {
-			n, err := p1.Read(buf)
-			if err != nil {
-				break
-			}
-			Vlogln(2, "p1 -> p0:", buf[:n])
-
-			_, err = p0.Write(buf[:n])
-			if err != nil {
-				break
-			}
-		}
-*/
 		close(p1die)
 		copyBuf.Put(buf)
 	}()
@@ -262,20 +246,6 @@ func cp(p1 io.ReadCloser, p0 io.ReadWriteCloser, p2 io.WriteCloser) {
 	go func() {
 		buf := copyBuf.Get().([]byte)
 		io.CopyBuffer(p2, p0, buf)
-/*
-		for {
-			n, err := p0.Read(buf)
-			if err != nil {
-				break
-			}
-			Vlogln(2, "p0 -> p2:", buf[:n])
-
-			_, err = p2.Write(buf[:n])
-			if err != nil {
-				break
-			}
-		}
-*/
 		close(p2die)
 		copyBuf.Put(buf)
 	}()

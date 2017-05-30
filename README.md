@@ -1,6 +1,17 @@
 # httptun
 
+A Simple Tunnel let TCP connection looks like HTTP request.
+Server side also with a simple web/file server.
+For the normal browser, the server side is just a website.
+Suggest using long connection(Multiplexing/VPN) with this tool.
 
+
+#### Warning: No encrypted connections between server and client !!!
+#### You should use TLS or something similar first, and then go through this tool.
+
+### overhead
+  * 3 http requset for initial
+  * 2 tcp connection for data transmission
 
 ### Usage
 
@@ -15,6 +26,7 @@ The above commands will establish port forwarding for 8388/tcp as:
 Tunnels the original connection:
 
 > Application -> Target Server(5005/tcp)
+
 
 
 
