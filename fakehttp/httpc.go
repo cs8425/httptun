@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"io/ioutil"
 	"time"
-	"sync"
 )
 
 var (
@@ -206,7 +205,6 @@ func (cl *Client) Dial() (net.Conn, error) {
 	}
 	Vlogln(2, "token:", token)
 
-	var wg sync.WaitGroup
 	type ret struct {
 		conn  net.Conn
 		buf   []byte
@@ -215,35 +213,16 @@ func (cl *Client) Dial() (net.Conn, error) {
 	txRetCh := make(chan ret, 1)
 	rxRetCh := make(chan ret, 1)
 
-	wg.Add(1)
 	go func () {
-		defer wg.Done()
-
 		tx, _, err := cl.getTx(token)
 		Vlogln(4, "tx:", tx)
-
-		select {
-		case <-txRetCh:
-		default:
-			txRetCh <- ret{tx, nil, err}
-		}
+		txRetCh <- ret{tx, nil, err}
 	}()
-
-	wg.Add(1)
 	go func () {
-		defer wg.Done()
-
 		rx, rxbuf, err := cl.getRx(token)
 		Vlogln(4, "rx:", rx, rxbuf)
-
-		select {
-		case <-rxRetCh:
-		default:
-			rxRetCh <- ret{rx, rxbuf, err}
-		}
+		rxRetCh <- ret{rx, rxbuf, err}
 	}()
-
-	wg.Wait()
 
 	txRet := <-txRetCh
 	tx, _, txErr := txRet.conn, txRet.buf, txRet.err
