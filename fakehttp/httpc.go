@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	errNotServer       = errors.New("may not tunnel server")
+	ErrNotServer       = errors.New("may not tunnel server")
+	ErrTokenTimeout    = errors.New("token may timeout")
 )
 
 type Client struct {
@@ -47,13 +48,17 @@ func (cl *Client) getToken() (string, error) {
 	}
 	defer res.Body.Close()
 
-	cookies := res.Cookies()
-
 	_, err = ioutil.ReadAll(res.Body)
 	if err != nil {
 		Vlogln(2, "getToken() ReadAll err:", err)
 	}
-	Vlogln(3, "getToken()", cookies)
+
+	return cl.checkToken(res)
+}
+
+func (cl *Client) checkToken(res *http.Response) (string, error) {
+	cookies := res.Cookies()
+	Vlogln(3, "checkToken()", cookies)
 
 	for _, cookie := range cookies {
 		Vlogln(3, "cookie:", cookie.Name, cookie.Value)
@@ -62,7 +67,7 @@ func (cl *Client) getToken() (string, error) {
 		}
 	}
 
-	return  "", errNotServer
+	return  "", ErrNotServer
 }
 
 func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteCloser
@@ -100,8 +105,16 @@ func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteClos
 	res, err := http.ReadResponse(txbuf, req)
 	if err != nil {
 		Vlogln(2, "Tx ReadResponse", err, res)
+		tx.Close()
 		return nil, nil, err
 	}
+
+	_, err = cl.checkToken(res)
+	if err == nil {
+		tx.Close()
+		return nil, nil, ErrTokenTimeout
+	}
+
 	n := txbuf.Buffered()
 	Vlogln(3, "Tx Response", n)
 
@@ -140,7 +153,14 @@ func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadClose
 	res, err := http.ReadResponse(rxbuf, req)
 	if err != nil {
 		Vlogln(2, "Rx ReadResponse", err, res, rxbuf)
+		rx.Close()
 		return nil, nil, err
+	}
+
+	_, err = cl.checkToken(res)
+	if err == nil {
+		rx.Close()
+		return nil, nil, ErrTokenTimeout
 	}
 
 	n := rxbuf.Buffered()
@@ -191,6 +211,8 @@ func (cl *Client) Dial() (net.Conn, error) {
 	}
 	Vlogln(4, "tx:", tx)
 
+	//time.Sleep(5 * time.Second)
+
 	rx, rxbuf, err := cl.getRx(token)
 	if err != nil {
 		return nil, err
@@ -199,3 +221,4 @@ func (cl *Client) Dial() (net.Conn, error) {
 
 	return mkconn(rx, tx, rxbuf), nil
 }
+

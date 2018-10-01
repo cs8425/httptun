@@ -11,7 +11,7 @@ import (
 
 var (
 	errBrokenPipe      = errors.New("broken pipe")
-	errServerClose     = errors.New("server close")
+	ErrServerClose     = errors.New("server close")
 )
 
 type Server struct {
@@ -75,7 +75,7 @@ func (srv *Server) StartServer() () {
 func (srv *Server) Accept() (net.Conn, error) {
 	select {
 	case <-srv.die:
-		return nil, errServerClose
+		return nil, ErrServerClose
 	case conn := <-srv.accepts:
 		return conn, nil
 	}
@@ -91,7 +91,7 @@ func (srv *Server) Close() (error) {
 	select {
 	case <-srv.die:
 		srv.dieLock.Unlock()
-		return errServerClose
+		return ErrServerClose
 	default:
 		close(srv.die)
 		srv.dieLock.Unlock()
@@ -235,7 +235,7 @@ func (srv *Server) rmToken(token string) {
 }
 
 func (srv *Server) tokenCleaner() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(tokenClean)
 	defer ticker.Stop()
 	for {
 		select {

@@ -22,6 +22,7 @@ const (
 
 	timeout = 10 * time.Second
 	tokenTTL = 20 * time.Second
+	tokenClean = 10 * time.Second
 )
 
 

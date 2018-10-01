@@ -25,7 +25,7 @@ var dir = flag.String("d", "./www", "web/file server root dir")
 
 var tokenCookieA = flag.String("ca", "cna", "token cookie name A")
 var tokenCookieB = flag.String("cb", "_tb_token_", "token cookie name B")
-var tokenCookieC = flag.String("cb", "_cna", "token cookie name C")
+var tokenCookieC = flag.String("cc", "_cna", "token cookie name C")
 var headerServer = flag.String("hdsrv", "nginx", "http header: Server")
 var wsObf = flag.Bool("usews", false, "fake as websocket")
 
@@ -41,6 +41,7 @@ func handleClient(p1 net.Conn) {
 	}
 	defer p2.Close()
 	cp(p1, p2)
+	Vlogln(2, "close", p1.RemoteAddr())
 }
 
 func main() {

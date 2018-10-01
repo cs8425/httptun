@@ -22,7 +22,7 @@ var targetUrl = flag.String("url", "/", "http url to send")
 
 var tokenCookieA = flag.String("ca", "cna", "token cookie name A")
 var tokenCookieB = flag.String("cb", "_tb_token_", "token cookie name B")
-var tokenCookieC = flag.String("cb", "_cna", "token cookie name C")
+var tokenCookieC = flag.String("cc", "_cna", "token cookie name C")
 
 var userAgent = flag.String("ua", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36 QQBrowser/9.3.6874.400", "User-Agent (default: QQ)")
 
@@ -45,6 +45,7 @@ func handleClient(p1 net.Conn) {
 	}
 	defer p2.Close()
 	cp(p1, p2)
+	Vlogln(2, "close", p1.RemoteAddr())
 }
 
 func main() {
