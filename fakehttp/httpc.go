@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"io/ioutil"
 	"time"
+	"sync"
 )
 
 var (
@@ -205,19 +206,64 @@ func (cl *Client) Dial() (net.Conn, error) {
 	}
 	Vlogln(2, "token:", token)
 
-	tx, _, err := cl.getTx(token)
-	if err != nil {
-		return nil, err
+	var wg sync.WaitGroup
+	type ret struct {
+		conn  net.Conn
+		buf   []byte
+		err   error
 	}
-	Vlogln(4, "tx:", tx)
+	txRetCh := make(chan ret, 1)
+	rxRetCh := make(chan ret, 1)
 
-	//time.Sleep(5 * time.Second)
+	wg.Add(1)
+	go func () {
+		defer wg.Done()
 
-	rx, rxbuf, err := cl.getRx(token)
-	if err != nil {
-		return nil, err
+		tx, _, err := cl.getTx(token)
+		Vlogln(4, "tx:", tx)
+
+		select {
+		case <-txRetCh:
+		default:
+			txRetCh <- ret{tx, nil, err}
+		}
+	}()
+
+	wg.Add(1)
+	go func () {
+		defer wg.Done()
+
+		rx, rxbuf, err := cl.getRx(token)
+		Vlogln(4, "rx:", rx, rxbuf)
+
+		select {
+		case <-rxRetCh:
+		default:
+			rxRetCh <- ret{rx, rxbuf, err}
+		}
+	}()
+
+	wg.Wait()
+
+	txRet := <-txRetCh
+	tx, _, txErr := txRet.conn, txRet.buf, txRet.err
+
+	rxRet := <-rxRetCh
+	rx, rxbuf, rxErr := rxRet.conn, rxRet.buf, rxRet.err
+
+	if txErr != nil {
+		if rx != nil { // close other side, no half open
+			rx.Close()
+		}
+		return nil, txErr
 	}
-	Vlogln(4, "rx:", rx, rxbuf)
+
+	if rxErr != nil {
+		if tx != nil {
+			tx.Close()
+		}
+		return nil, rxErr
+	}
 
 	return mkconn(rx, tx, rxbuf), nil
 }
