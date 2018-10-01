@@ -65,10 +65,36 @@ func NewServer(lis net.Listener) (*Server) {
 	return srv
 }
 
-func (srv *Server) StartServer() () {
+func NewHandle(hdlr http.Handler) (*Server) {
+	srv := &Server{
+		states: make(map[string]*state),
+		accepts: make(chan net.Conn, 128),
+		TxMethod:     txMethod,
+		RxMethod:     rxMethod,
+		TxFlag:       txFlag,
+		RxFlag:       rxFlag,
+		TokenCookieA: tokenCookieA,
+		TokenCookieB: tokenCookieB,
+		TokenCookieC: tokenCookieC,
+		HeaderServer: headerServer,
+		HttpHandler: hdlr,
+		UseWs: false,
+		TokenTTL: tokenTTL,
+	}
+
 	go srv.tokenCleaner()
 
-	http.HandleFunc("/", srv.handler)
+	return srv
+}
+
+func (srv *Server) StartServer() () {
+	if srv.lis == nil {
+		return
+	}
+
+	go srv.tokenCleaner()
+
+	http.HandleFunc("/", srv.ServeHTTP)
 	go http.Serve(srv.lis, nil)
 }
 
@@ -82,6 +108,9 @@ func (srv *Server) Accept() (net.Conn, error) {
 }
 
 func (srv *Server) Addr() (net.Addr) {
+	if srv.lis == nil {
+		return nil
+	}
 	return srv.lis.Addr()
 }
 
@@ -95,11 +124,14 @@ func (srv *Server) Close() (error) {
 	default:
 		close(srv.die)
 		srv.dieLock.Unlock()
-		return srv.lis.Close()
+		if srv.lis != nil {
+			return srv.lis.Close()
+		}
+		return nil
 	}
 }
 
-func (srv *Server) handler(w http.ResponseWriter, r *http.Request) {
+func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var cc *state
 	var ok bool
 	var err error
