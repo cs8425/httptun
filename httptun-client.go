@@ -4,6 +4,7 @@ import (
 	"net"
 	"flag"
 	"io"
+	"io/ioutil"
 	"sync"
 	"os"
 	"runtime"
@@ -20,6 +21,8 @@ var port = flag.String("p", "127.0.0.1:5005", "bind port")
 var target = flag.String("t", "127.0.0.1:4040", "http server address & port")
 var targetUrl = flag.String("url", "/", "http url to send")
 
+var crtFile    = flag.String("crt", "", "PEM encoded certificate file")
+
 var tokenCookieA = flag.String("ca", "cna", "token cookie name A")
 var tokenCookieB = flag.String("cb", "_tb_token_", "token cookie name B")
 var tokenCookieC = flag.String("cc", "_cna", "token cookie name C")
@@ -27,17 +30,13 @@ var tokenCookieC = flag.String("cc", "_cna", "token cookie name C")
 var userAgent = flag.String("ua", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36 QQBrowser/9.3.6874.400", "User-Agent (default: QQ)")
 
 var wsObf = flag.Bool("usews", false, "fake as websocket")
+var tlsVerify = flag.Bool("k", true, "InsecureSkipVerify")
+
+var cl *fakehttp.Client
 
 func handleClient(p1 net.Conn) {
 	defer p1.Close()
 
-	cl := fakehttp.NewClient(*target)
-	cl.TokenCookieA = *tokenCookieA
-	cl.TokenCookieB = *tokenCookieB
-	cl.TokenCookieC = *tokenCookieC
-	cl.UseWs = *wsObf
-	cl.UserAgent = *userAgent
-	cl.Url = *targetUrl
 	p2, err := cl.Dial()
 	if err != nil {
 		Vlogln(2, "Dial err:", err)
@@ -70,6 +69,24 @@ func main() {
 	Vlogln(2, "token cookie B:", *tokenCookieB)
 	Vlogln(2, "token cookie C:", *tokenCookieC)
 	Vlogln(2, "use ws:", *wsObf)
+	Vlogln(2, "use certificate:", *crtFile)
+
+	if *crtFile != "" {
+		caCert, err := ioutil.ReadFile(*crtFile)
+		if err != nil {
+			Vlogln(2, "Reading certificate error:", err)
+			os.Exit(1)
+		}
+		cl = fakehttp.NewTLSClient(*target, caCert, *tlsVerify)
+	} else {
+		cl = fakehttp.NewClient(*target)
+	}
+	cl.TokenCookieA = *tokenCookieA
+	cl.TokenCookieB = *tokenCookieB
+	cl.TokenCookieC = *tokenCookieC
+	cl.UseWs = *wsObf
+	cl.UserAgent = *userAgent
+	cl.Url = *targetUrl
 
 	copyBuf.New = func() interface{} {
 		return make([]byte, 4096)

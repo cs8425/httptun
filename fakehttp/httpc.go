@@ -2,11 +2,14 @@ package fakehttp
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"net"
 	"net/http"
 	"io/ioutil"
 	"time"
+	"strings"
 )
 
 var (
@@ -27,14 +30,28 @@ type Client struct {
 	Timeout       time.Duration
 	Host          string
 	UseWs         bool
+
+	Transport     *http.Transport
+	TLSConfig     *tls.Config
+}
+
+func (cl *Client) getURL() (string) {
+	url := cl.Host + cl.Url
+	if cl.Transport != nil {
+		url = "https://" + url
+	} else {
+		url = "http://" + url
+	}
+	return url
 }
 
 func (cl *Client) getToken() (string, error) {
 	client := &http.Client{
+		Transport: cl.Transport,
 		Timeout: cl.Timeout,
 	}
 
-	req, err := http.NewRequest("GET", "http://" + cl.Host + cl.Url, nil)
+	req, err := http.NewRequest("GET", cl.getURL(), nil)
 	if err != nil {
 		Vlogln(2, "getToken() NewRequest err:", err)
 		return "", err
@@ -52,6 +69,8 @@ func (cl *Client) getToken() (string, error) {
 	if err != nil {
 		Vlogln(2, "getToken() ReadAll err:", err)
 	}
+
+	Vlogln(3, "getToken() http version:", res.Proto)
 
 	return cl.checkToken(res)
 }
@@ -72,7 +91,7 @@ func (cl *Client) checkToken(res *http.Response) (string, error) {
 
 func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteCloser
 
-	req, err := http.NewRequest(cl.TxMethod, "http://" + cl.Host, nil)
+	req, err := http.NewRequest(cl.TxMethod, cl.getURL(), nil)
 	if err != nil {
 		Vlogln(2, "getTx() NewRequest err:", err)
 		return nil, nil, err
@@ -97,8 +116,11 @@ func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteClos
 		Vlogln(2, "Tx connect to:", cl.Host, err)
 		return nil, nil, err
 	}
-	req.Write(tx)
+	if cl.TLSConfig != nil {
+		tx = tls.Client(tx, cl.TLSConfig)
+	}
 	Vlogln(3, "Tx connect ok:", cl.Host)
+	req.Write(tx)
 
 	txbuf := bufio.NewReaderSize(tx, 1024)
 //	Vlogln(2, "Tx Reader", txbuf)
@@ -108,6 +130,7 @@ func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteClos
 		tx.Close()
 		return nil, nil, err
 	}
+	Vlogln(3, "Tx http version:", res.Proto)
 
 	_, err = cl.checkToken(res)
 	if err == nil {
@@ -123,7 +146,7 @@ func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteClos
 
 func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadCloser
 
-	req, err := http.NewRequest(cl.RxMethod, "http://" + cl.Host, nil)
+	req, err := http.NewRequest(cl.RxMethod, cl.getURL(), nil)
 	if err != nil {
 		Vlogln(2, "getRx() NewRequest err:", err)
 		return nil, nil, err
@@ -145,6 +168,9 @@ func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadClose
 		Vlogln(2, "Rx connect to:", cl.Host, err)
 		return nil, nil, err
 	}
+	if cl.TLSConfig != nil {
+		rx = tls.Client(rx, cl.TLSConfig)
+	}
 	Vlogln(3, "Rx connect ok:", cl.Host)
 	req.Write(rx)
 
@@ -156,6 +182,7 @@ func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadClose
 		rx.Close()
 		return nil, nil, err
 	}
+	Vlogln(3, "Rx http version:", res.Proto)
 
 	_, err = cl.checkToken(res)
 	if err == nil {
@@ -245,5 +272,46 @@ func (cl *Client) Dial() (net.Conn, error) {
 	}
 
 	return mkconn(rx, tx, rxbuf), nil
+}
+
+func NewTLSClient(target string, caCrtByte []byte, skipVerify bool) (*Client) {
+	cl := &Client {
+		TxMethod:     txMethod,
+		RxMethod:     rxMethod,
+		TxFlag:       txFlag,
+		RxFlag:       rxFlag,
+		TokenCookieA: tokenCookieA,
+		TokenCookieB: tokenCookieB,
+		TokenCookieC: tokenCookieC,
+		UserAgent:    userAgent,
+		Url:          targetUrl,
+		Timeout:      timeout,
+		Host:         target,
+		UseWs:        false,
+	}
+
+	colonPos := strings.LastIndex(target, ":")
+	if colonPos == -1 {
+		colonPos = len(target)
+	}
+	hostname := target[:colonPos]
+
+	var caCrtPool *x509.CertPool
+	if caCrtByte != nil {
+		caCrtPool = x509.NewCertPool()
+		caCrtPool.AppendCertsFromPEM(caCrtByte)
+	}
+
+	cl.TLSConfig = &tls.Config{
+		RootCAs: caCrtPool,
+		InsecureSkipVerify: skipVerify,
+		ServerName: hostname,
+	}
+
+	cl.Transport = &http.Transport{
+		TLSClientConfig: cl.TLSConfig,
+	}
+
+	return cl
 }
 
