@@ -47,8 +47,12 @@ func (cl *Client) getURL() (string) {
 
 func (cl *Client) getToken() (string, error) {
 	client := &http.Client{
-		Transport: cl.Transport,
+//		Transport: cl.Transport, // bug? can't set nil via cl.Transport
 		Timeout: cl.Timeout,
+	}
+
+	if cl.Transport != nil {
+		client.Transport = cl.Transport
 	}
 
 	req, err := http.NewRequest("GET", cl.getURL(), nil)

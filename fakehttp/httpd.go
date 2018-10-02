@@ -276,13 +276,33 @@ func (srv *Server) tokenCleaner() {
 		case <-ticker.C:
 		}
 
+		list := make([]*state, 0)
+
 		srv.mx.Lock()
 		for idx, c := range srv.states {
 			if time.Now().After(c.ttl) {
 				delete(srv.states, idx)
+				list = append(list, c)
+				Vlogln(4, "[gc]", idx, c)
 			}
 		}
 		srv.mx.Unlock()
+
+		// check and close half open connection
+		for _, cc := range list {
+			cc.mx.Lock()
+			if cc.connR == nil && cc.connW != nil {
+				cc.connW.Close()
+				cc.connW = nil
+				Vlogln(4, "[gc]half open W", cc)
+			}
+			if cc.connR != nil && cc.connW == nil {
+				cc.connR.Close()
+				cc.connR = nil
+				Vlogln(4, "[gc]half open R", cc)
+			}
+			cc.mx.Unlock()
+		}
 	}
 }
 
