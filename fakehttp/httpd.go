@@ -224,12 +224,7 @@ func (srv *Server) handleWs(w http.ResponseWriter, r *http.Request, token string
 	if r.Method == srv.RxMethod && flag == srv.RxFlag  {
 		Vlogln(2, token, " <-> client")
 		srv.rmToken(token)
-
-		n := bufrw.Reader.Buffered()
-		buf := make([]byte, n)
-		bufrw.Reader.Read(buf[:n])
-		Vlogln(2, token, " <-> client", n)
-		srv.accepts <- mkconn(conn, conn, buf[:n])
+		srv.accepts <- conn
 	}
 	Vlogln(3, "ws init end")
 }

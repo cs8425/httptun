@@ -294,7 +294,7 @@ func (cl *Client) dialWs(token string) (net.Conn, error) {
 		return mkconn(rx, rx, buf[:n]), nil
 	}
 
-	return mkconn(rx, rx, nil), nil
+	return rx, nil
 }
 
 func (cl *Client) dialNonWs(token string) (net.Conn, error) {
