@@ -2,20 +2,37 @@ package fakehttp
 
 import (
 	"bufio"
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"net"
 	"net/http"
 	"io/ioutil"
 	"time"
-	"strings"
 )
 
 var (
 	ErrNotServer       = errors.New("may not tunnel server")
 	ErrTokenTimeout    = errors.New("token may timeout")
 )
+
+type NetDialer interface {
+	GetProto() (string)
+	Do(req *http.Request, timeout time.Duration) (*http.Response, error) // http.Client
+	DialTimeout(host string, timeout time.Duration) (net.Conn, error) // net.DialTimeout("tcp", Host, Timeout)
+}
+
+type dialNonTLS Client
+func (dl dialNonTLS) GetProto() (string) {
+	return "http://"
+}
+func (dl dialNonTLS) Do(req *http.Request, timeout time.Duration) (*http.Response, error) {
+	client := &http.Client{
+		Timeout: timeout,
+	}
+	return client.Do(req)
+}
+func (dl dialNonTLS) DialTimeout(host string, timeout time.Duration) (net.Conn, error) {
+	return net.DialTimeout("tcp", host, timeout)
+}
 
 type Client struct {
 	TxMethod      string
@@ -31,30 +48,15 @@ type Client struct {
 	Host          string
 	UseWs         bool
 
-	Transport     *http.Transport
-	TLSConfig     *tls.Config
+	Dialer        NetDialer
 }
 
 func (cl *Client) getURL() (string) {
 	url := cl.Host + cl.Url
-	if cl.Transport != nil {
-		url = "https://" + url
-	} else {
-		url = "http://" + url
-	}
-	return url
+	return cl.Dialer.GetProto() + url
 }
 
 func (cl *Client) getToken() (string, error) {
-	client := &http.Client{
-//		Transport: cl.Transport, // bug? can't set nil via cl.Transport
-		Timeout: cl.Timeout,
-	}
-
-	if cl.Transport != nil {
-		client.Transport = cl.Transport
-	}
-
 	req, err := http.NewRequest("GET", cl.getURL(), nil)
 	if err != nil {
 		Vlogln(2, "getToken() NewRequest err:", err)
@@ -62,7 +64,7 @@ func (cl *Client) getToken() (string, error) {
 	}
 
 	req.Header.Set("User-Agent", cl.UserAgent)
-	res, err := client.Do(req)
+	res, err := cl.Dialer.Do(req, cl.Timeout)
 	if err != nil {
 		Vlogln(2, "getToken() send Request err:", err)
 		return "", err
@@ -107,22 +109,13 @@ func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteClos
 	req.Header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
 	req.Header.Set("User-Agent", cl.UserAgent)
 	req.Header.Set("Cookie", cl.TokenCookieB + "=" + token + "; " + cl.TokenCookieC + "=" + cl.TxFlag)
-	if cl.UseWs {
-		req.Header.Set("Connection", "Upgrade")
-		req.Header.Set("Upgrade", "websocket")
-		req.Header.Set("Sec-WebSocket-Key", token)
-		req.Header.Set("Sec-WebSocket-Version", "13")
-	}
 
-
-	tx, err := net.DialTimeout("tcp", cl.Host, cl.Timeout)
+	tx, err := cl.Dialer.DialTimeout(cl.Host, cl.Timeout)
 	if err != nil {
 		Vlogln(2, "Tx connect to:", cl.Host, err)
 		return nil, nil, err
 	}
-	if cl.TLSConfig != nil {
-		tx = tls.Client(tx, cl.TLSConfig)
-	}
+
 	Vlogln(3, "Tx connect ok:", cl.Host)
 	req.Write(tx)
 
@@ -160,20 +153,12 @@ func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadClose
 	req.Header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
 	req.Header.Set("User-Agent", cl.UserAgent)
 	req.Header.Set("Cookie", cl.TokenCookieB + "=" + token + "; " + cl.TokenCookieC + "=" + cl.RxFlag)
-	if cl.UseWs {
-		req.Header.Set("Connection", "Upgrade")
-		req.Header.Set("Upgrade", "websocket")
-		req.Header.Set("Sec-WebSocket-Key", token)
-		req.Header.Set("Sec-WebSocket-Version", "13")
-	}
 
-	rx, err := net.DialTimeout("tcp", cl.Host, cl.Timeout)
+
+	rx, err := cl.Dialer.DialTimeout(cl.Host, cl.Timeout)
 	if err != nil {
 		Vlogln(2, "Rx connect to:", cl.Host, err)
 		return nil, nil, err
-	}
-	if cl.TLSConfig != nil {
-		rx = tls.Client(rx, cl.TLSConfig)
 	}
 	Vlogln(3, "Rx connect ok:", cl.Host)
 	req.Write(rx)
@@ -221,6 +206,7 @@ func NewClient(target string) (*Client) {
 		Host:         target,
 		UseWs:        false,
 	}
+	cl.Dialer = dialNonTLS(*cl)
 	return cl
 }
 
@@ -246,7 +232,7 @@ func (cl *Client) Dial() (net.Conn, error) {
 func (cl *Client) dialWs(token string) (net.Conn, error) {
 	req, err := http.NewRequest(cl.RxMethod, cl.getURL(), nil)
 	if err != nil {
-		Vlogln(2, "getRx() NewRequest err:", err)
+		Vlogln(2, "dialWs() NewRequest err:", err)
 		return nil, err
 	}
 
@@ -259,26 +245,23 @@ func (cl *Client) dialWs(token string) (net.Conn, error) {
 	req.Header.Set("Sec-WebSocket-Key", token)
 	req.Header.Set("Sec-WebSocket-Version", "13")
 
-	rx, err := net.DialTimeout("tcp", cl.Host, cl.Timeout)
+	rx, err := cl.Dialer.DialTimeout(cl.Host, cl.Timeout)
 	if err != nil {
-		Vlogln(2, "Rx connect to:", cl.Host, err)
+		Vlogln(2, "WS connect to:", cl.Host, err)
 		return nil, err
 	}
-	if cl.TLSConfig != nil {
-		rx = tls.Client(rx, cl.TLSConfig)
-	}
-	Vlogln(3, "Rx connect ok:", cl.Host)
+	Vlogln(3, "WS connect ok:", cl.Host)
 	req.Write(rx)
 
 	rxbuf := bufio.NewReaderSize(rx, 1024)
 //	Vlogln(2, "Rx Reader", rxbuf)
 	res, err := http.ReadResponse(rxbuf, req)
 	if err != nil {
-		Vlogln(2, "Rx ReadResponse", err, res, rxbuf)
+		Vlogln(2, "WS ReadResponse", err, res, rxbuf)
 		rx.Close()
 		return nil, err
 	}
-	Vlogln(3, "Rx http version:", res.Proto)
+	Vlogln(3, "WS http version:", res.Proto)
 
 	_, err = cl.checkToken(res)
 	if err == nil {
@@ -287,7 +270,7 @@ func (cl *Client) dialWs(token string) (net.Conn, error) {
 	}
 
 	n := rxbuf.Buffered()
-	Vlogln(3, "Rx Response", n)
+	Vlogln(3, "WS Response", n)
 	if n > 0 {
 		buf := make([]byte, n)
 		rxbuf.Read(buf[:n])
@@ -340,44 +323,4 @@ func (cl *Client) dialNonWs(token string) (net.Conn, error) {
 	return mkconn(rx, tx, rxbuf), nil
 }
 
-func NewTLSClient(target string, caCrtByte []byte, skipVerify bool) (*Client) {
-	cl := &Client {
-		TxMethod:     txMethod,
-		RxMethod:     rxMethod,
-		TxFlag:       txFlag,
-		RxFlag:       rxFlag,
-		TokenCookieA: tokenCookieA,
-		TokenCookieB: tokenCookieB,
-		TokenCookieC: tokenCookieC,
-		UserAgent:    userAgent,
-		Url:          targetUrl,
-		Timeout:      timeout,
-		Host:         target,
-		UseWs:        false,
-	}
-
-	colonPos := strings.LastIndex(target, ":")
-	if colonPos == -1 {
-		colonPos = len(target)
-	}
-	hostname := target[:colonPos]
-
-	var caCrtPool *x509.CertPool
-	if caCrtByte != nil {
-		caCrtPool = x509.NewCertPool()
-		caCrtPool.AppendCertsFromPEM(caCrtByte)
-	}
-
-	cl.TLSConfig = &tls.Config{
-		RootCAs: caCrtPool,
-		InsecureSkipVerify: skipVerify,
-		ServerName: hostname,
-	}
-
-	cl.Transport = &http.Transport{
-		TLSClientConfig: cl.TLSConfig,
-	}
-
-	return cl
-}
 
