@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const verbosity int = 2
+const verbosity int = 3
 
 type Conn struct {
 	R     io.ReadCloser

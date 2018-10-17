@@ -28,7 +28,8 @@ var tokenCookieA = flag.String("ca", "cna", "token cookie name A")
 var tokenCookieB = flag.String("cb", "_tb_token_", "token cookie name B")
 var tokenCookieC = flag.String("cc", "_cna", "token cookie name C")
 var headerServer = flag.String("hdsrv", "nginx", "http header: Server")
-var wsObf = flag.Bool("usews", false, "fake as websocket")
+var wsObf = flag.Bool("usews", true, "fake as websocket")
+var onlyWs = flag.Bool("onlyws", false, "only accept websocket")
 
 var crtFile    = flag.String("crt", "", "PEM encoded certificate file")
 var keyFile    = flag.String("key", "", "PEM encoded private key file")
@@ -57,6 +58,7 @@ func main() {
 	Vlogln(2, "token cookie B:", *tokenCookieB)
 	Vlogln(2, "token cookie C:", *tokenCookieC)
 	Vlogln(2, "use ws:", *wsObf)
+	Vlogln(2, "only ws:", *onlyWs)
 
 	copyBuf.New = func() interface{} {
 		return make([]byte, 4096)
@@ -72,6 +74,7 @@ func main() {
 
 	websrv := fakehttp.NewHandle(fileHandler) // bind handler
 	websrv.UseWs = *wsObf
+	websrv.OnlyWs = *onlyWs
 	http.Handle("/", websrv) // now add to http.DefaultServeMux
 
 	// start http server

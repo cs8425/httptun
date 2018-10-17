@@ -32,6 +32,7 @@ type Server struct {
 	HeaderServer  string
 	HttpHandler   http.Handler
 	UseWs         bool
+	OnlyWs        bool
 	TokenTTL      time.Duration
 }
 
@@ -58,7 +59,8 @@ func NewServer(lis net.Listener) (*Server) {
 		TokenCookieC: tokenCookieC,
 		HeaderServer: headerServer,
 		HttpHandler: http.FileServer(http.Dir("./www")),
-		UseWs: false,
+		UseWs: true,
+		OnlyWs: false,
 		TokenTTL: tokenTTL,
 	}
 
@@ -78,7 +80,8 @@ func NewHandle(hdlr http.Handler) (*Server) {
 		TokenCookieC: tokenCookieC,
 		HeaderServer: headerServer,
 		HttpHandler: hdlr,
-		UseWs: false,
+		UseWs: true,
+		OnlyWs: false,
 		TokenTTL: tokenTTL,
 	}
 
@@ -131,19 +134,21 @@ func (srv *Server) Close() (error) {
 	}
 }
 
+// set cookie: TokenCookieA = XXXX
+// try get cookie: TokenCookieB = XXXX
 func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var cc *state
 	var ok bool
 	var err error
 	var c, ct *http.Cookie
 
-	c, err = r.Cookie(srv.TokenCookieB)
+	c, err = r.Cookie(srv.TokenCookieB) // token
 	if err != nil {
 		Vlogln(3, "cookieB err:", c, err)
 		goto FILE
 	}
 
-	ct, err = r.Cookie(srv.TokenCookieC)
+	ct, err = r.Cookie(srv.TokenCookieC) // flag
 	if err != nil {
 		Vlogln(3, "cookieC err:", ct, err)
 		goto FILE
@@ -158,61 +163,31 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			goto FILE
 		}
 
-		if !srv.UseWs {
-			flusher, ok := w.(http.Flusher)
-			if !ok {
-				goto FILE
+		if srv.OnlyWs {
+			srv.handleWs(w, r, c.Value, ct.Value, cc)
+			return
+		} else {
+			// check ws or not
+			if !srv.UseWs {
+				srv.handleNonWs(w, r, c.Value, ct.Value, cc)
+				return
+			} else {
+				if r.Header.Get("Upgrade") == "websocket" && r.Header.Get("Sec-WebSocket-Key") == c.Value {
+					srv.handleWs(w, r, c.Value, ct.Value, cc)
+					return
+				}
+
+				srv.handleNonWs(w, r, c.Value, ct.Value, cc)
+				return
 			}
-			header := w.Header()
-			header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
-			header.Set("Content-Encoding", "gzip")
-			flusher.Flush()
-			Vlogln(3, "Flush")
 		}
-
-		hj, ok := w.(http.Hijacker)
-		if !ok {
-			Vlogln(2, "hijacking err1:", ok)
-			return
-		}
-		Vlogln(3, "hijacking ok1")
-
-		conn, bufrw, err := hj.Hijack()
-		if err != nil {
-			Vlogln(2, "hijacking err:", err)
-			return
-		}
-		Vlogln(3, "hijacking ok2")
-		bufrw.Flush()
-
-		if srv.UseWs {
-			conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + c.Value + "\r\n\r\n"))
-		}
-
-		cc.mx.Lock()
-		defer cc.mx.Unlock()
-		if r.Method == srv.RxMethod && ct.Value == srv.RxFlag {
-			Vlogln(2, c.Value, " -> client")
-			cc.connW = conn
-		}
-		if r.Method == srv.TxMethod && ct.Value == srv.TxFlag  {
-			Vlogln(2, c.Value, " <- client")
-			cc.connR = conn
-			cc.bufR = bufrw
-		}
-		if cc.connR != nil && cc.connW != nil {
-			srv.rmToken(c.Value)
-
-			n := cc.bufR.Reader.Buffered()
-			buf := make([]byte, n)
-			cc.bufR.Reader.Read(buf[:n])
-			srv.accepts <- mkconn(cc.connR, cc.connW, buf[:n])
-		}
-		Vlogln(3, "init end")
-		return
 	}
 
 FILE:
+	srv.handleBase(w,r)
+}
+
+func (srv *Server) handleBase(w http.ResponseWriter, r *http.Request)  {
 	header := w.Header()
 	header.Set("Server", srv.HeaderServer)
 	token := randStringBytes(16)
@@ -221,9 +196,91 @@ FILE:
 	http.SetCookie(w, &cookie)
 	srv.regToken(token)
 
-	Vlogln(2, "web:", r.URL.Path, token, c)
+	Vlogln(2, "web:", r.URL.Path, token)
 
 	srv.HttpHandler.ServeHTTP(w, r)
+}
+
+func (srv *Server) handleWs(w http.ResponseWriter, r *http.Request, token string, flag string, cc *state)  {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		Vlogln(2, "hijacking err1:", ok)
+		return
+	}
+	Vlogln(3, "hijacking ok1")
+
+	conn, bufrw, err := hj.Hijack()
+	if err != nil {
+		Vlogln(2, "hijacking err:", err)
+		return
+	}
+	Vlogln(3, "hijacking ok2")
+	bufrw.Flush()
+
+	conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + token + "\r\n\r\n"))
+
+	cc.mx.Lock()
+	defer cc.mx.Unlock()
+	if r.Method == srv.RxMethod && flag == srv.RxFlag  {
+		Vlogln(2, token, " <-> client")
+		srv.rmToken(token)
+
+		n := bufrw.Reader.Buffered()
+		buf := make([]byte, n)
+		bufrw.Reader.Read(buf[:n])
+		Vlogln(2, token, " <-> client", n)
+		srv.accepts <- mkconn(conn, conn, buf[:n])
+	}
+	Vlogln(3, "ws init end")
+}
+
+func (srv *Server) handleNonWs(w http.ResponseWriter, r *http.Request, token string, flag string, cc *state)  {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		srv.handleBase(w,r)
+		return
+	}
+	header := w.Header()
+	header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
+	header.Set("Content-Encoding", "gzip")
+	flusher.Flush()
+	Vlogln(3, "Flush")
+
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		Vlogln(2, "hijacking err1:", ok)
+		return
+	}
+	Vlogln(3, "hijacking ok1")
+
+	conn, bufrw, err := hj.Hijack()
+	if err != nil {
+		Vlogln(2, "hijacking err:", err)
+		return
+	}
+	Vlogln(3, "hijacking ok2")
+	bufrw.Flush()
+
+	cc.mx.Lock()
+	defer cc.mx.Unlock()
+	if r.Method == srv.RxMethod && flag == srv.RxFlag {
+		Vlogln(2, token, " -> client")
+		cc.connW = conn
+	}
+	if r.Method == srv.TxMethod && flag == srv.TxFlag  {
+		Vlogln(2, token, " <- client")
+		cc.connR = conn
+		cc.bufR = bufrw
+	}
+	if cc.connR != nil && cc.connW != nil {
+		srv.rmToken(token)
+
+		n := cc.bufR.Reader.Buffered()
+		buf := make([]byte, n)
+		cc.bufR.Reader.Read(buf[:n])
+		srv.accepts <- mkconn(cc.connR, cc.connW, buf[:n])
+	}
+	Vlogln(3, "non-ws init end")
 }
 
 func (srv *Server) regToken(token string) {

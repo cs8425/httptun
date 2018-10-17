@@ -84,7 +84,7 @@ func (cl *Client) checkToken(res *http.Response) (string, error) {
 	Vlogln(3, "checkToken()", cookies)
 
 	for _, cookie := range cookies {
-		Vlogln(3, "cookie:", cookie.Name, cookie.Value)
+		Vlogln(4, "cookie:", cookie.Name, cookie.Value)
 		if cookie.Name == cl.TokenCookieA {
 			return cookie.Value, nil
 		}
@@ -236,6 +236,68 @@ func (cl *Client) Dial() (net.Conn, error) {
 	}
 	Vlogln(2, "token:", token)
 
+	if cl.UseWs {
+		return cl.dialWs(token)
+	}
+
+	return cl.dialNonWs(token)
+}
+
+func (cl *Client) dialWs(token string) (net.Conn, error) {
+	req, err := http.NewRequest(cl.RxMethod, cl.getURL(), nil)
+	if err != nil {
+		Vlogln(2, "getRx() NewRequest err:", err)
+		return nil, err
+	}
+
+	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
+	req.Header.Set("User-Agent", cl.UserAgent)
+	req.Header.Set("Cookie", cl.TokenCookieB + "=" + token + "; " + cl.TokenCookieC + "=" + cl.RxFlag)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Sec-WebSocket-Key", token)
+	req.Header.Set("Sec-WebSocket-Version", "13")
+
+	rx, err := net.DialTimeout("tcp", cl.Host, cl.Timeout)
+	if err != nil {
+		Vlogln(2, "Rx connect to:", cl.Host, err)
+		return nil, err
+	}
+	if cl.TLSConfig != nil {
+		rx = tls.Client(rx, cl.TLSConfig)
+	}
+	Vlogln(3, "Rx connect ok:", cl.Host)
+	req.Write(rx)
+
+	rxbuf := bufio.NewReaderSize(rx, 1024)
+//	Vlogln(2, "Rx Reader", rxbuf)
+	res, err := http.ReadResponse(rxbuf, req)
+	if err != nil {
+		Vlogln(2, "Rx ReadResponse", err, res, rxbuf)
+		rx.Close()
+		return nil, err
+	}
+	Vlogln(3, "Rx http version:", res.Proto)
+
+	_, err = cl.checkToken(res)
+	if err == nil {
+		rx.Close()
+		return nil, ErrTokenTimeout
+	}
+
+	n := rxbuf.Buffered()
+	Vlogln(3, "Rx Response", n)
+	if n > 0 {
+		buf := make([]byte, n)
+		rxbuf.Read(buf[:n])
+		return mkconn(rx, rx, buf[:n]), nil
+	}
+
+	return mkconn(rx, rx, nil), nil
+}
+
+func (cl *Client) dialNonWs(token string) (net.Conn, error) {
 	type ret struct {
 		conn  net.Conn
 		buf   []byte
