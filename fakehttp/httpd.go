@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +22,8 @@ type Server struct {
 	states        map[string]*state
 	accepts       chan net.Conn
 	lis           net.Listener
+
+	cleanerStarted uint32
 
 	TxMethod      string
 	RxMethod      string
@@ -85,9 +88,16 @@ func NewHandle(hdlr http.Handler) (*Server) {
 		TokenTTL: tokenTTL,
 	}
 
-	go srv.tokenCleaner()
+	srv.startTokenCleaner()
 
 	return srv
+}
+
+// only start 1 goroutine
+func (srv *Server) startTokenCleaner() {
+	if atomic.CompareAndSwapUint32(&srv.cleanerStarted, 0, 1) {
+		go srv.tokenCleaner()
+	}
 }
 
 func (srv *Server) StartServer() () {
@@ -95,7 +105,7 @@ func (srv *Server) StartServer() () {
 		return
 	}
 
-	go srv.tokenCleaner()
+	srv.startTokenCleaner()
 
 	http.HandleFunc("/", srv.ServeHTTP)
 	go http.Serve(srv.lis, nil)
