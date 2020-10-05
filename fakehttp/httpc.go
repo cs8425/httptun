@@ -64,6 +64,7 @@ func (cl *Client) getToken() (string, error) {
 	}
 
 	req.Header.Set("User-Agent", cl.UserAgent)
+	req.Close = true
 	res, err := cl.Dialer.Do(req, cl.Timeout)
 	if err != nil {
 		Vlogln(2, "getToken() send Request err:", err)
