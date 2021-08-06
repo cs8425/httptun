@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math/rand"
 	"net"
+	"net/http/httputil"
 	"io"
 	"log"
 	"time"
@@ -72,9 +73,12 @@ func (c CloseableReader) Close() error {
 	return c.r0.Close()
 }
 
-func mkconn(p1 net.Conn, p2 net.Conn, rbuf []byte) (net.Conn){
+func mkconn(p1 net.Conn, p2 net.Conn, rbuf []byte, chunked bool) (net.Conn){
 	rem := bytes.NewReader(rbuf)
 	r := io.MultiReader(rem, p1)
+	if chunked {
+		r = httputil.NewChunkedReader(r)
+	}
 	rc := CloseableReader{ r, p1 }
 
 	pipe := Conn {

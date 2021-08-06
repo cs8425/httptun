@@ -98,18 +98,21 @@ func (cl *Client) checkToken(res *http.Response) (string, error) {
 
 func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteCloser
 
-	req, err := http.NewRequest(cl.TxMethod, cl.getURL(), nil)
+	write, rx := net.Pipe()
+	req, err := http.NewRequest(cl.TxMethod, cl.getURL(), rx)
 	if err != nil {
 		Vlogln(2, "getTx() NewRequest err:", err)
 		return nil, nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Content-Encoding", "gzip")
-	req.Header.Set("Pragma", "no-cache")
-	req.Header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
+	// req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// req.Header.Set("Content-Encoding", "gzip")
+	// req.Header.Set("Pragma", "no-cache")
+	// req.Header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
+	req.Header.Set("Transfer-Encoding", "chunked")
 	req.Header.Set("User-Agent", cl.UserAgent)
 	req.Header.Set("Cookie", cl.TokenCookieB + "=" + token + "; " + cl.TokenCookieC + "=" + cl.TxFlag)
+	req.ContentLength = -1
 
 	tx, err := cl.Dialer.DialTimeout(cl.Host, cl.Timeout)
 	if err != nil {
@@ -118,9 +121,11 @@ func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteClos
 	}
 
 	Vlogln(3, "Tx connect ok:", cl.Host)
-	req.Write(tx)
+	go req.Write(tx)
+	Vlogln(5, "Tx connect init end:", cl.Host)
 
-	txbuf := bufio.NewReaderSize(tx, 1024)
+
+/*	txbuf := bufio.NewReaderSize(tx, 1024)
 //	Vlogln(2, "Tx Reader", txbuf)
 	res, err := http.ReadResponse(txbuf, req)
 	if err != nil {
@@ -139,7 +144,8 @@ func (cl *Client) getTx(token string) (net.Conn, []byte, error) { //io.WriteClos
 	n := txbuf.Buffered()
 	Vlogln(3, "Tx Response", n)
 
-	return tx, nil, nil
+	// return tx, nil, nil*/
+	return write, nil, nil
 }
 
 func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadCloser
@@ -150,11 +156,10 @@ func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadClose
 		return nil, nil, err
 	}
 
-	req.Header.Set("Pragma", "no-cache")
-	req.Header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
+	// req.Header.Set("Pragma", "no-cache")
+	// req.Header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
 	req.Header.Set("User-Agent", cl.UserAgent)
 	req.Header.Set("Cookie", cl.TokenCookieB + "=" + token + "; " + cl.TokenCookieC + "=" + cl.RxFlag)
-
 
 	rx, err := cl.Dialer.DialTimeout(cl.Host, cl.Timeout)
 	if err != nil {
@@ -163,6 +168,7 @@ func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadClose
 	}
 	Vlogln(3, "Rx connect ok:", cl.Host)
 	req.Write(rx)
+	Vlogln(5, "Rx connect init end:", cl.Host)
 
 	rxbuf := bufio.NewReaderSize(rx, 1024)
 //	Vlogln(2, "Rx Reader", rxbuf)
@@ -180,6 +186,7 @@ func (cl *Client) getRx(token string) (net.Conn, []byte, error) { //io.ReadClose
 		return nil, nil, ErrTokenTimeout
 	}
 
+	// need check & de-chunked !!!
 	n := rxbuf.Buffered()
 	Vlogln(3, "Rx Response", n)
 	if n > 0 {
@@ -275,7 +282,7 @@ func (cl *Client) dialWs(token string) (net.Conn, error) {
 	if n > 0 {
 		buf := make([]byte, n)
 		rxbuf.Read(buf[:n])
-		return mkconn(rx, rx, buf[:n]), nil
+		return mkconn(rx, rx, buf[:n], false), nil
 	}
 
 	return rx, nil
@@ -321,7 +328,8 @@ func (cl *Client) dialNonWs(token string) (net.Conn, error) {
 		return nil, rxErr
 	}
 
-	return mkconn(rx, tx, rxbuf), nil
+	// need check & de-chunked !!!
+	return mkconn(rx, tx, rxbuf, true), nil
 }
 
 

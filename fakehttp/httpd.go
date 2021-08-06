@@ -290,7 +290,7 @@ func (srv *Server) handleNonWs(w http.ResponseWriter, r *http.Request, token str
 		n := cc.bufR.Reader.Buffered()
 		buf := make([]byte, n)
 		cc.bufR.Reader.Read(buf[:n])
-		srv.accepts <- mkconn(cc.connR, cc.connW, buf[:n])
+		srv.accepts <- mkconn(cc.connR, cc.connW, buf[:n], false)
 	}
 	Vlogln(3, "non-ws init end")
 }
