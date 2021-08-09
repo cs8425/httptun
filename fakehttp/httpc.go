@@ -282,7 +282,7 @@ func (cl *Client) dialWs(token string) (net.Conn, error) {
 	if n > 0 {
 		buf := make([]byte, n)
 		rxbuf.Read(buf[:n])
-		return mkconn(rx, rx, buf[:n], false), nil
+		return mkconn(rx, false, rx, false, buf[:n]), nil
 	}
 
 	return rx, nil
@@ -329,7 +329,7 @@ func (cl *Client) dialNonWs(token string) (net.Conn, error) {
 	}
 
 	// need check & de-chunked !!!
-	return mkconn(rx, tx, rxbuf, true), nil
+	return mkconn(rx, true, tx, false, rxbuf), nil
 }
 
 

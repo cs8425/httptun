@@ -252,11 +252,14 @@ func (srv *Server) handleNonWs(w http.ResponseWriter, r *http.Request, token str
 		srv.handleBase(w,r)
 		return
 	}
-	header := w.Header()
-	header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
-	header.Set("Content-Encoding", "gzip")
-	flusher.Flush()
-	Vlogln(3, "Flush")
+	if r.Method == srv.RxMethod && flag == srv.RxFlag {
+		header := w.Header()
+		header.Set("Cache-Control", "private, no-store, no-cache, max-age=0")
+		header.Set("Content-Encoding", "gzip")
+		header.Set("Transfer-Encoding", "chunked")
+		flusher.Flush()
+		Vlogln(3, "Flush")
+	}
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -290,7 +293,7 @@ func (srv *Server) handleNonWs(w http.ResponseWriter, r *http.Request, token str
 		n := cc.bufR.Reader.Buffered()
 		buf := make([]byte, n)
 		cc.bufR.Reader.Read(buf[:n])
-		srv.accepts <- mkconn(cc.connR, cc.connW, buf[:n], false)
+		srv.accepts <- mkconn(cc.connR, true, cc.connW, true, buf[:n])
 	}
 	Vlogln(3, "non-ws init end")
 }

@@ -14,7 +14,9 @@ const verbosity int = 2
 
 type Conn struct {
 	R     io.ReadCloser
-	W     net.Conn //io.WriteCloser
+	W     io.WriteCloser
+	RefR  net.Conn
+	RefW  net.Conn
 }
 func (c Conn) Read(data []byte) (n int, err error)  { return c.R.Read(data) }
 func (c Conn) Write(data []byte) (n int, err error) { return c.W.Write(data) }
@@ -30,7 +32,7 @@ func (c Conn) Close() error {
 }
 
 func (c Conn) LocalAddr() net.Addr {
-	if ts, ok := c.W.(interface {
+	if ts, ok := c.RefW.(interface {
 		LocalAddr() net.Addr
 	}); ok {
 		return ts.LocalAddr()
@@ -39,7 +41,7 @@ func (c Conn) LocalAddr() net.Addr {
 }
 
 func (c Conn) RemoteAddr() net.Addr {
-	if ts, ok := c.W.(interface {
+	if ts, ok := c.RefW.(interface {
 		RemoteAddr() net.Addr
 	}); ok {
 		return ts.RemoteAddr()
@@ -48,11 +50,11 @@ func (c Conn) RemoteAddr() net.Addr {
 }
 
 func (c Conn) SetReadDeadline(t time.Time) error {
-	return nil
+	return c.RefR.SetWriteDeadline(t)
 }
 
 func (c Conn) SetWriteDeadline(t time.Time) error {
-	return c.W.SetWriteDeadline(t)
+	return c.RefW.SetWriteDeadline(t)
 }
 
 func (c Conn) SetDeadline(t time.Time) error {
@@ -73,17 +75,21 @@ func (c CloseableReader) Close() error {
 	return c.r0.Close()
 }
 
-func mkconn(p1 net.Conn, p2 net.Conn, rbuf []byte, chunked bool) (net.Conn){
+func mkconn(p1 net.Conn, rxChunked bool, p2 net.Conn, txChunked bool, rbuf []byte) (net.Conn){
 	rem := bytes.NewReader(rbuf)
 	r := io.MultiReader(rem, p1)
-	if chunked {
+	if rxChunked {
 		r = httputil.NewChunkedReader(r)
 	}
 	rc := CloseableReader{ r, p1 }
-
 	pipe := Conn {
 		R: rc,
 		W: p2,
+		RefR: p1,
+		RefW: p2,
+	}
+	if txChunked {
+		pipe.W = httputil.NewChunkedWriter(p2)
 	}
 	return pipe
 }
