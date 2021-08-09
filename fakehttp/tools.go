@@ -2,6 +2,7 @@ package fakehttp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"math/rand"
 	"net"
 	"net/http/httputil"
@@ -80,6 +81,12 @@ func mkconn(p1 net.Conn, rxChunked bool, p2 net.Conn, txChunked bool, rbuf []byt
 	r := io.MultiReader(rem, p1)
 	if rxChunked {
 		r = httputil.NewChunkedReader(r)
+		paddingReader := &PaddingReader{
+			R: r,
+			canRead: make(chan struct{}, 1),
+		}
+		go paddingReader.worker()
+		r = paddingReader
 	}
 	rc := CloseableReader{ r, p1 }
 	pipe := Conn {
@@ -92,6 +99,56 @@ func mkconn(p1 net.Conn, rxChunked bool, p2 net.Conn, txChunked bool, rbuf []byt
 		pipe.W = httputil.NewChunkedWriter(p2)
 	}
 	return pipe
+}
+
+type PaddingReader struct {
+	R io.Reader
+	buffer bytes.Buffer
+	cls bool
+	canRead chan struct{}
+}
+func (c *PaddingReader) worker() {
+	buf := make([]byte, 4)
+	for {
+		_, err := io.ReadFull(c.R, buf[0:4])
+		if err != nil { // TODO
+			c.cls = true
+			select{
+			case c.canRead <- struct{}{}:
+			default:
+			}
+			return
+		}
+		paddingSz := binary.LittleEndian.Uint16(buf[0:])
+		dataSz := binary.LittleEndian.Uint16(buf[2:])
+		buf := make([]byte, paddingSz - 4)
+		_, err = io.ReadFull(c.R, buf)
+		if err != nil { // TODO
+			c.cls = true
+		}
+		c.buffer.Write(buf[:dataSz])
+
+		select{
+		case c.canRead <- struct{}{}:
+		default:
+		}
+	}
+}
+func (c *PaddingReader) Read(data []byte) (n int, err error)  {
+	// TODO: trigger read
+	select {
+	case <-c.canRead:
+		return c.buffer.Read(data)
+	}
+/*	n, err = c.buffer.Read(data)
+	if c.cls && err != nil {
+		return
+	}
+	return n, nil*/
+}
+func (c *PaddingReader) Close() error {
+	c.cls = true
+	return nil
 }
 
 

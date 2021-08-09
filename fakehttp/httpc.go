@@ -288,7 +288,7 @@ func (cl *Client) dialWs(token string) (net.Conn, error) {
 	return rx, nil
 }
 
-func (cl *Client) dialNonWs(token string) (net.Conn, error) {
+func (cl *Client) dialNonWs2(token string) (net.Conn, error) {
 	type ret struct {
 		conn  net.Conn
 		buf   []byte
@@ -330,6 +330,35 @@ func (cl *Client) dialNonWs(token string) (net.Conn, error) {
 
 	// need check & de-chunked !!!
 	return mkconn(rx, true, tx, false, rxbuf), nil
+}
+
+func (cl *Client) dialNonWs(token string) (net.Conn, error) {
+	type ret struct {
+		conn  net.Conn
+		buf   []byte
+		err   error
+	}
+	rxRetCh := make(chan ret, 1)
+
+	go func () {
+		rx, rxbuf, err := cl.getRx(token)
+		Vlogln(4, "rx:", rx, rxbuf)
+		rxRetCh <- ret{rx, rxbuf, err}
+	}()
+
+	rxRet := <-rxRetCh
+	rx, rxbuf, rxErr := rxRet.conn, rxRet.buf, rxRet.err
+
+	tx := NewHttpWritter(cl, token)
+	if rxErr != nil {
+		if tx != nil { // close other side, no half open
+			tx.Close()
+		}
+		return nil, rxErr
+	}
+
+	// need check & de-chunked !!!
+	return mkconn2(rx, true, tx, false, rxbuf), nil
 }
 
 
