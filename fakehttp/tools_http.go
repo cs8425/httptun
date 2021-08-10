@@ -42,10 +42,14 @@ func (c *HttpWritter) doReq(token string, buf *bytes.Reader, cls bool) error {
 
 	req.Header.Set("User-Agent", cl.UserAgent)
 	req.Header.Set("Cookie", cl.TokenCookieB + "=" + token + "; " + cl.TokenCookieC + "=" + cl.TxFlag)
+	// req.Header.Set("Accept-Encoding", "identity")
 	if cls {
 		req.Header.Set("X-EOF", token)
 	}
 	//req.Close = true
+
+//	dump, err := httputil.DumpRequestOut(req, true)
+//	Vlogln(2, "[dbg]HttpWritter:", string(dump), err)
 
 	res, err := cl.Dialer.Do(req, cl.Timeout)
 	if err != nil {
@@ -57,13 +61,17 @@ func (c *HttpWritter) doReq(token string, buf *bytes.Reader, cls bool) error {
 	if err != nil {
 		Vlogln(2, "HttpWritter.Write() ReadAll err:", err)
 	}
-	Vlogln(3, "HttpWritter.Write() http version:", res.Proto)
+//	Vlogln(2, "HttpWritter.Write() http version:", res.Proto, buf.Size(), buf.Len())
 	return err
 }
 
 func (c *HttpWritter) Write(data []byte) (n int, err error) {
+	Vlogln(5, "HttpWritter.Write() pipe data:", len(data))
+	sz := len(data)
+	buf := make([]byte, sz, sz)
+	copy(buf, data)
 	select{
-	case c.hasData <- data:
+	case c.hasData <- buf:
 	case <-c.die:
 		return 0, io.EOF
 	}

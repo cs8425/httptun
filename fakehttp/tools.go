@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"time"
+	"sync"
 )
 
 const verbosity int = 2
@@ -102,6 +103,7 @@ func mkconn(p1 net.Conn, rxChunked bool, p2 net.Conn, txChunked bool, rbuf []byt
 }
 
 type PaddingReader struct {
+	mx sync.Mutex
 	R io.Reader
 	buffer bytes.Buffer
 	cls bool
@@ -109,10 +111,15 @@ type PaddingReader struct {
 }
 func (c *PaddingReader) worker() {
 	buf := make([]byte, 4)
+	cls := false
 	for {
 		_, err := io.ReadFull(c.R, buf[0:4])
 		if err != nil { // TODO
+			cls = true
+			c.mx.Lock()
 			c.cls = true
+			c.mx.Unlock()
+
 			select{
 			case c.canRead <- struct{}{}:
 			default:
@@ -124,30 +131,45 @@ func (c *PaddingReader) worker() {
 		buf := make([]byte, paddingSz - 4)
 		_, err = io.ReadFull(c.R, buf)
 		if err != nil { // TODO
-			c.cls = true
-		}
-		c.buffer.Write(buf[:dataSz])
+			Vlogln(5, "[dbg]PaddingReader:", err)
 
-		select{
-		case c.canRead <- struct{}{}:
-		default:
+			cls = true
+			c.mx.Lock()
+			c.cls = true
+			c.mx.Unlock()
+		}
+		if dataSz > 0 || cls {
+			Vlogln(5, "PaddingReader.worker() data:", dataSz)
+			c.mx.Lock()
+			c.buffer.Write(buf[:dataSz])
+			c.mx.Unlock()
+
+			select{
+			case c.canRead <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
 func (c *PaddingReader) Read(data []byte) (n int, err error)  {
-	// TODO: trigger read
 	select {
 	case <-c.canRead:
-		return c.buffer.Read(data)
+		c.mx.Lock()
+		n, err = c.buffer.Read(data)
+		cls := c.cls
+		c.mx.Unlock()
+		if cls {
+			return n, err
+		} else {
+			return n, nil
+		}
 	}
-/*	n, err = c.buffer.Read(data)
-	if c.cls && err != nil {
-		return
-	}
-	return n, nil*/
 }
 func (c *PaddingReader) Close() error {
+	Vlogln(5, "[dbg]PaddingReader close")
+	c.mx.Lock()
 	c.cls = true
+	c.mx.Unlock()
 	return nil
 }
 
