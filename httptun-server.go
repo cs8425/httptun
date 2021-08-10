@@ -31,6 +31,8 @@ var headerServer = flag.String("hdsrv", "nginx", "http header: Server")
 var wsObf = flag.Bool("usews", true, "fake as websocket")
 var onlyWs = flag.Bool("onlyws", false, "only accept websocket")
 
+var copyBuffSz = flag.Int("buffer", 16*1024, "copy buffer size (bytes)")
+
 var crtFile    = flag.String("crt", "", "PEM encoded certificate file")
 var keyFile    = flag.String("key", "", "PEM encoded private key file")
 
@@ -61,7 +63,7 @@ func main() {
 	Vlogln(2, "only ws:", *onlyWs)
 
 	copyBuf.New = func() interface{} {
-		return make([]byte, 4096)
+		return make([]byte, *copyBuffSz)
 	}
 
 

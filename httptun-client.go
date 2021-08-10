@@ -32,6 +32,8 @@ var userAgent = flag.String("ua", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWeb
 var wsObf = flag.Bool("usews", false, "fake as websocket")
 var tlsVerify = flag.Bool("k", true, "InsecureSkipVerify")
 
+var copyBuffSz = flag.Int("buffer", 16*1024, "copy buffer size (bytes)")
+
 var cl *fakehttp.Client
 
 func handleClient(p1 net.Conn) {
@@ -89,7 +91,7 @@ func main() {
 	cl.Url = *targetUrl
 
 	copyBuf.New = func() interface{} {
-		return make([]byte, 4096)
+		return make([]byte, *copyBuffSz)
 	}
 
 	for {
