@@ -16,25 +16,27 @@ import (
 	"./fakehttp"
 )
 
-var verbosity int = 2
+var (
+	verbosity int = 2
 
-var copyBuf sync.Pool
+	copyBuf sync.Pool
 
-var port = flag.String("p", ":4040", "http bind port")
-var target = flag.String("t", "127.0.0.1:5002", "real server")
-var dir = flag.String("d", "./www", "web/file server root dir")
+	port = flag.String("p", ":4040", "http bind port")
+	target = flag.String("t", "127.0.0.1:5002", "real server")
+	dir = flag.String("d", "./www", "web/file server root dir")
 
-var tokenCookieA = flag.String("ca", "cna", "token cookie name A")
-var tokenCookieB = flag.String("cb", "_tb_token_", "token cookie name B")
-var tokenCookieC = flag.String("cc", "_cna", "token cookie name C")
-var headerServer = flag.String("hdsrv", "nginx", "http header: Server")
-var wsObf = flag.Bool("usews", true, "fake as websocket")
-var onlyWs = flag.Bool("onlyws", false, "only accept websocket")
+	tokenCookieA = flag.String("ca", "cna", "token cookie name A")
+	tokenCookieB = flag.String("cb", "_tb_token_", "token cookie name B")
+	tokenCookieC = flag.String("cc", "_cna", "token cookie name C")
+	headerServer = flag.String("hdsrv", "nginx", "http header: Server")
+	wsObf = flag.Bool("usews", true, "fake as websocket")
+	onlyWs = flag.Bool("onlyws", false, "only accept websocket")
 
-var copyBuffSz = flag.Int("buffer", 16*1024, "copy buffer size (bytes)")
+	copyBuffSz = flag.Int("buffer", 16*1024, "copy buffer size (bytes)")
 
-var crtFile    = flag.String("crt", "", "PEM encoded certificate file")
-var keyFile    = flag.String("key", "", "PEM encoded private key file")
+	crtFile    = flag.String("crt", "", "PEM encoded certificate file")
+	keyFile    = flag.String("key", "", "PEM encoded private key file")
+)
 
 func handleClient(p1 net.Conn) {
 	defer p1.Close()
@@ -108,6 +110,7 @@ func byListener() {
 	// setup fakehttp
 	websrv := fakehttp.NewServer(lis)
 	websrv.UseWs = *wsObf
+	websrv.OnlyWs = *onlyWs
 	websrv.HttpHandler = http.FileServer(http.Dir(*dir))
 	websrv.StartServer()
 
