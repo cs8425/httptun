@@ -110,10 +110,11 @@ type PaddingReader struct {
 	canRead chan struct{}
 }
 func (c *PaddingReader) worker() {
-	buf := make([]byte, 4)
+	const HdrSz = 4
+	buf := make([]byte, 65535)
 	cls := false
 	for {
-		_, err := io.ReadFull(c.R, buf[0:4])
+		_, err := io.ReadFull(c.R, buf[0:HdrSz])
 		if err != nil { // TODO
 			cls = true
 			c.mx.Lock()
@@ -127,9 +128,12 @@ func (c *PaddingReader) worker() {
 			return
 		}
 		paddingSz := binary.LittleEndian.Uint16(buf[0:])
+		if paddingSz <= HdrSz {
+			continue
+		}
+
 		dataSz := binary.LittleEndian.Uint16(buf[2:])
-		buf := make([]byte, paddingSz - 4)
-		_, err = io.ReadFull(c.R, buf)
+		_, err = io.ReadFull(c.R, buf[:paddingSz-HdrSz])
 		if err != nil { // TODO
 			Vlogln(5, "[dbg]PaddingReader:", err)
 

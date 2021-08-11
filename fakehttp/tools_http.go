@@ -43,6 +43,7 @@ func (c *HttpWritter) doReq(token string, buf *bytes.Reader, cls bool) error {
 	req.Header.Set("User-Agent", cl.UserAgent)
 	req.Header.Set("Cookie", cl.TokenCookieB + "=" + token + "; " + cl.TokenCookieC + "=" + cl.TxFlag)
 	// req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("Connection", "keep-alive")
 	if cls {
 		req.Header.Set("X-EOF", token)
 	}
