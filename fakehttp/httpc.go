@@ -16,7 +16,6 @@ var (
 
 type NetDialer interface {
 	GetProto() (string)
-	Do(req *http.Request, timeout time.Duration) (*http.Response, error) // http.Client
 	DialTimeout(host string, timeout time.Duration) (net.Conn, error) // net.DialTimeout("tcp", Host, Timeout)
 }
 
@@ -24,17 +23,13 @@ type dialNonTLS Client
 func (dl dialNonTLS) GetProto() (string) {
 	return "http://"
 }
-func (dl dialNonTLS) Do(req *http.Request, timeout time.Duration) (*http.Response, error) {
-	client := &http.Client{
-		Timeout: timeout,
-	}
-	return client.Do(req)
-}
 func (dl dialNonTLS) DialTimeout(host string, timeout time.Duration) (net.Conn, error) {
 	return net.DialTimeout("tcp", host, timeout)
 }
 
 type Client struct {
+	*http.Client
+
 	TxMethod      string
 	RxMethod      string
 	TxFlag        string
@@ -44,7 +39,6 @@ type Client struct {
 	TokenCookieC  string
 	UserAgent     string
 	Url           string
-	Timeout       time.Duration
 	Host          string
 	UseWs         bool
 
@@ -65,7 +59,7 @@ func (cl *Client) getToken() (string, error) {
 
 	req.Header.Set("User-Agent", cl.UserAgent)
 	req.Close = true
-	res, err := cl.Dialer.Do(req, cl.Timeout)
+	res, err := cl.Do(req)
 	if err != nil {
 		Vlogln(2, "getToken() send Request err:", err)
 		return "", err
@@ -210,9 +204,12 @@ func NewClient(target string) (*Client) {
 		TokenCookieC: tokenCookieC,
 		UserAgent:    userAgent,
 		Url:          targetUrl,
-		Timeout:      timeout,
+//		Timeout:      timeout,
 		Host:         target,
 		UseWs:        false,
+	}
+	cl.Client = &http.Client{
+		Timeout:      timeout,
 	}
 	cl.Dialer = dialNonTLS(*cl)
 	return cl

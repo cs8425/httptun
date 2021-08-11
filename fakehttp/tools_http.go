@@ -52,7 +52,7 @@ func (c *HttpWritter) doReq(token string, buf *bytes.Reader, cls bool) error {
 //	dump, err := httputil.DumpRequestOut(req, true)
 //	Vlogln(2, "[dbg]HttpWritter:", string(dump), err)
 
-	res, err := cl.Dialer.Do(req, cl.Timeout)
+	res, err := cl.Do(req)
 	if err != nil {
 		Vlogln(2, "HttpWritter.Write() send Request err:", err)
 		return err

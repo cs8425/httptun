@@ -12,20 +12,12 @@ import (
 )
 
 type dialTLS struct {
-	Transport     *http.Transport
+//	Transport     *http.Transport
 	TLSConfig     *tls.Config
 }
 
 func (dl *dialTLS) GetProto() (string) {
 	return "https://"
-}
-
-func (dl *dialTLS) Do(req *http.Request, timeout time.Duration) (*http.Response, error) {
-	client := &http.Client{
-		Timeout: timeout,
-	}
-	client.Transport = dl.Transport
-	return client.Do(req)
 }
 
 func (dl *dialTLS) DialTimeout(host string, timeout time.Duration) (net.Conn, error) {
@@ -60,11 +52,12 @@ func NewTLSClient(target string, caCrtByte []byte, skipVerify bool) (*Client) {
 
 	Transport := &http.Transport{
 		TLSClientConfig: TLSConfig,
+		MaxIdleConns: 32,
 	}
+	cl.Transport = Transport
 
 	cl.Dialer = &dialTLS{
 		TLSConfig: TLSConfig,
-		Transport: Transport,
 	}
 
 	return cl
